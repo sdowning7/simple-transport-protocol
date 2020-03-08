@@ -8,71 +8,94 @@ import json
 MSG_SIZE = 1500
 DATA_SIZE = 1472
 TIMEOUT = 30
+WIDNOW = 5
+ACK_LIMIT = 3
+
+# state
+inFlight = {}
+acks = []
+
 
 def log(string):
-  sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
-  sys.stderr.flush()
+    sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
+    sys.stderr.flush()
+
 
 def send_next_packet(seqn, sock, dest):
-  msg = {"sequence": seqn, "data": "", "ack": False, "eof": False}
-  overhead = len(json.dumps(msg))
-  msg["data"] = sys.stdin.read(DATA_SIZE - overhead)
-  if len(msg["data"]) > 0:
-    assert (len(msg) <= DATA_SIZE), f"ERROR: Datagram is longer ({len(msg)}) than {DATA_SIZE} bytes!!!"
+    msg = {"sequence": seqn, "data": "", "ack": False, "eof": False}
+    overhead = len(json.dumps(msg))
+    msg["data"] = sys.stdin.read(DATA_SIZE - overhead)
+    if len(msg["data"]) > 0:
+        assert (len(msg) <= DATA_SIZE), f"ERROR: Datagram is longer ({len(msg)}) than {DATA_SIZE} bytes!!!"
 
-    while sock.sendto(json.dumps(msg).encode('ascii'), dest) < len(msg):
-      log("[error] unable to fully send packet")
-    else:
-      log("[send data] " + str(seqn) + " (" + str(len(msg["data"])) + ")")
-    return seqn + len(msg["data"])
-  return seqn
+        while sock.sendto(json.dumps(msg).encode('ascii'), dest) < len(msg):
+            log("[error] unable to fully send packet")
+        log("[send data] " + str(seqn) + " (" + str(len(msg["data"])) + ")")
+        inFlight[seqn] = msg
+        return seqn + len(msg["data"])
+    return seqn
+
 
 def main():
-  # Bind to localhost and an ephemeral port
-  ip_port = sys.argv[1]
-  udp_ip = ip_port[0:ip_port.find(":")]
-  udp_port = int(ip_port[ip_port.find(":")+1:])
-  dest = (udp_ip, udp_port)
-  seqn = 0
+    # Bind to localhost and an ephemeral port
+    ip_port = sys.argv[1]
+    udp_ip = ip_port[0:ip_port.find(":")]
+    udp_port = int(ip_port[ip_port.find(":") + 1:])
+    dest = (udp_ip, udp_port)
+    seqn = 0
 
-  # Set up the socket
-  sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-  sock.settimeout(TIMEOUT)
+    # Set up the socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(TIMEOUT)
 
-  # Send first packet
-  seqn = send_next_packet(seqn, sock, dest)
+    # Send initial packets
+    for i in range(WIDNOW):
+        seqn = send_next_packet(seqn, sock, dest)
 
-  # Now read in data, send packets
-  while True:
-    log("ABOUT TO SLEEP")
-    result = sock.recvfrom(MSG_SIZE)
+    # flag for if all of the packets have been sent or not
+    sent = False
 
-    if result:
-      (data, _addr) = result
-      data = data.decode('ascii')
-
-      try:
-        decoded = json.loads(data)
-
-        # If there is an ack, send next packet
-        if decoded['ack'] == seqn:
-          log(f"[recv ack] {seqn}")
-
-          # Try to send next packet; break if no more data
-          new_seq = send_next_packet(seqn, sock, dest)
-          if new_seq == seqn:
+    # Now read in data, send packets
+    #TODO need way to handle dropped packets towards end - if any of the last 3 packets are dropped we're stuck as of now
+    while True:
+        if sent and len(inFlight) == 0:
             break
-          seqn = new_seq
-      except (ValueError, KeyError, TypeError):
-        log("[recv corrupt packet]")
-    else:
-      log("[error] timeout")
-      sys.exit(-1)
 
-    log(f"(seqn {seqn})")
+        log("ABOUT TO SLEEP")
+        result = sock.recvfrom(MSG_SIZE)
 
-  sock.sendto(json.dumps({"eof": True, "data": "", "sequence": seqn, "ack": False}).encode('ascii'), dest)
-  sys.exit(0)
+        if result:
+            (data, _addr) = result
+            data = data.decode('ascii')
+
+            try:
+                decoded = json.loads(data)
+                ack = decoded['ack']
+
+                if ack in inFlight:
+                    log(f"[recv ack] {ack}")
+                    inFlight.pop(ack)
+                    acks.append(ack)
+                    #TODO check if we need to retransmit any dropped packets
+
+                    # Try to send next packet; mark as sent if no more data
+                    if not sent:
+                        new_seq = send_next_packet(seqn, sock, dest)
+                        if new_seq == seqn:
+                            sent = True
+                        seqn = new_seq
+
+            except (ValueError, KeyError, TypeError):
+                log("[recv corrupt packet]")
+        else:
+            log("[error] timeout")
+            sys.exit(-1)
+
+        log(f"(seqn {seqn})")
+
+    sock.sendto(json.dumps({"eof": True, "data": "", "sequence": seqn, "ack": False}).encode('ascii'), dest)
+    sys.exit(0)
+
 
 if __name__ == '__main__':
-  main()
+    main()
