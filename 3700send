@@ -13,7 +13,7 @@ ACK_LIMIT = 3
 
 # state
 inFlight = {}
-acks = []
+acks = ["9999"]
 
 
 def log(string):
@@ -36,8 +36,6 @@ def send_next_packet(seqn, sock, dest):
     return seqn
 
 def retransmit_dropped_packets(sock, dest):
-    if len(acks) == 0:
-        return
     for seqn in inFlight:
         if (len(acks) >= 3 and seqn < int(acks[-3])) or seqn < int(acks[-1]):
             log("retransmitting packet with seqn " + str(seqn))
