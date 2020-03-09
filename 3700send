@@ -64,6 +64,8 @@ def main():
 
     # Now read in data, send packets
     while True:
+        #TODO - we don't really want to always retransmit all packets. Should have a timer or some system to keep track
+        # of when to re-transmit. This is expensive and unnecessary in most cases, and hurts performance. 
         retransmit_dropped_packets(sock, dest, all=True)
 
         if sent and len(inFlight) == 0:
