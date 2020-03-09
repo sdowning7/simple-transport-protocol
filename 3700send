@@ -93,6 +93,8 @@ def main():
 
         log(f"(seqn {seqn})")
 
+    log("RECEIVED ALL ACKS")
+
     sock.sendto(json.dumps({"eof": True, "data": "", "sequence": seqn, "ack": False}).encode('ascii'), dest)
     sys.exit(0)
 
