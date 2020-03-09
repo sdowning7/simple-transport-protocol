@@ -6,7 +6,7 @@ import datetime
 import json
 
 MSG_SIZE = 1500
-TIMEOUT = 30
+TIMEOUT = 10
 
 # state
 received = {}
