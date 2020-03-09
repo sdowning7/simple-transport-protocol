@@ -72,9 +72,6 @@ def main():
                 decoded = json.loads(data)
                 ack = decoded['ack']
 
-                log("Received ack: " + str(ack))
-                log("Inflight acks: " + str(inFlight))
-
                 if ack in inFlight:
                     log(f"[recv ack] {ack}")
                     inFlight.pop(ack)
