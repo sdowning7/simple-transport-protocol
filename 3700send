@@ -38,6 +38,7 @@ def send_next_packet(seqn, sock, dest):
 def retransmit_dropped_packets(sock, dest):
     for seqn in inFlight:
         if seqn < int(acks[-3]):
+            log("retransmitting packet with seqn " + str(seqn))
             while sock.sendto(json.dumps(inFlight[seqn]).encode('ascii'), dest) < len(inFlight[seqn]):
                 log("[error] unable to retransmit packet")
 
