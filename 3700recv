@@ -18,6 +18,7 @@ def log(string):
     sys.stderr.flush()
 
 def checkNextPacket():
+    global seqn
     while True:
         if seqn not in received:
             break
@@ -26,6 +27,7 @@ def checkNextPacket():
         received.pop(seqn)
 
 def main():
+    global seqn
     # Bind to localhost and an ephemeral port
     udp_ip = "127.0.0.1"
     udp_port = 0
