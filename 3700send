@@ -8,18 +8,29 @@ import json
 MSG_SIZE = 1500
 DATA_SIZE = 1472
 TIMEOUT = 30
+# how many packets can be sent at one time
 WIDNOW = 5
+# how many new packets can be received and sent before retransmitting
 ACK_LIMIT = 3
 
 # state
+"""
+This is the state variable we will use to keep track of what packets are being sent and still need to be ACK'd. The key
+to this will be the seqn of the LAST byte of data in a message (i.e. if the seqn was 1000 and we sent a 1000 byte
+message the seqn in this map would be 2000). The value of the map will be the entire message that was sent to the 
+receiver for easier retransmission. 
+"""
 inFlight = {}
+"""
+This will keep track of all of the acks we receive. This is so we can check against the most recent acks in order to
+determine if any of our in flight packets may have been dropped.
+"""
 acks = []
 
 
 def log(string):
     sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
     sys.stderr.flush()
-
 
 def send_next_packet(seqn, sock, dest):
     msg = {"sequence": seqn, "data": "", "ack": False, "eof": False}
@@ -35,9 +46,18 @@ def send_next_packet(seqn, sock, dest):
         return seqn + len(msg["data"])
     return seqn
 
+"""
+Method that compares most recent packets that were acked with in flight packets and retransmits any packets that are
+taking too long. Also has a utility for retransmitting all in flight packets.
+"""
+#TODO we should probably never be retransmitting all of the packets but it was an easy way to fix a bunch of different
+# issues I was running into - like the last ACK_LIMIT packets not being able to be checked against
 def retransmit_dropped_packets(sock, dest, all=False):
+    # iterate over all inflight packets
     for seqn in inFlight:
+        # if all flag is enabled or the sequence number is lower than the last 3 acks received
         if all or seqn < int(acks[-ACK_LIMIT]):
+            # retransmit the packet
             log("retransmitting packet with seqn " + str(seqn))
             while sock.sendto(json.dumps(inFlight[seqn]).encode('ascii'), dest) < len(inFlight[seqn]):
                 log("[error] unable to retransmit packet")
@@ -65,15 +85,21 @@ def main():
     # Now read in data, send packets
     while True:
         #TODO - we don't really want to always retransmit all packets. Should have a timer or some system to keep track
-        # of when to re-transmit. This is expensive and unnecessary in most cases, and hurts performance. 
+        # of when to re-transmit. This is expensive and unnecessary in most cases, and hurts performance.
         retransmit_dropped_packets(sock, dest, all=True)
 
+        # if the message is sent and there's no inflight packets, we're done
         if sent and len(inFlight) == 0:
             break
 
         log("ABOUT TO SLEEP")
         result = sock.recvfrom(MSG_SIZE)
 
+        """
+        TODO - this is where things are breaking with drops. it basically hangs on the recvfrom and if it doesn't
+        receive anything it timeouts and exits. So I'm not sure where to add a timer or something because we still want
+        to always be trying to recieve packets in case there's just a delay
+        """
         if result:
             (data, _addr) = result
             data = data.decode('ascii')
@@ -82,14 +108,17 @@ def main():
                 decoded = json.loads(data)
                 ack = decoded['ack']
 
+                # if it's an ack we're waiting on
                 if ack in inFlight:
                     log(f"[recv ack] {ack}")
+                    # remove from in flight list and add to acks
                     inFlight.pop(ack)
                     acks.append(ack)
+                    # if we have enough acks stored to compare against, retransmit any potentially dropped packets
                     if len(acks) >= ACK_LIMIT:
                         retransmit_dropped_packets(sock, dest)
 
-                    # Try to send next packet; mark as sent if no more data
+                    # Try to send next packet; set sent flag to true if no more data
                     if not sent:
                         new_seq = send_next_packet(seqn, sock, dest)
                         if new_seq == seqn:

@@ -9,7 +9,16 @@ MSG_SIZE = 1500
 TIMEOUT = 10
 
 # state
+"""
+This is the map that will keep track of the packets we have received that are out of order. The map will be from the
+sequence number we receive being the key and the value being the data content of the packet. Therefore the key will
+correspond to the *first* byte of the message. This is to make implementing checkNextPacket easier.
+"""
 received = {}
+"""
+The current sequence number up to which we have already written to sdtout. Therefore the next packet we want to write
+should have a sequence number that equals this. 
+"""
 seqn = 0
 
 
@@ -17,17 +26,27 @@ def log(string):
     sys.stderr.write(datetime.datetime.now().strftime("%H:%M:%S.%f") + " " + string + "\n")
     sys.stderr.flush()
 
+"""
+Check memory and write all possible packets to stdout that we can while maintaining order. 
+"""
 def checkNextPacket():
+    # need to define seqn as global or it complains
     global seqn
     while True:
+        # if we haven't received the next packet yet - break
         if seqn not in received:
             break
+        # write the next packets data to stdout
         sys.stdout.write(received[seqn])
+        # grab length of the data
         data_len = len(received[seqn])
+        # we can delete the sequence number from data now
         received.pop(seqn)
+        # increment sequence number to point to the next packet we need
         seqn = seqn + data_len
 
 def main():
+    # required statement
     global seqn
     # Bind to localhost and an ephemeral port
     udp_ip = "127.0.0.1"
@@ -62,13 +81,18 @@ def main():
                 # If there is data, we accept it and print it out
                 if decoded['data']:
                     log(f"[recv data] {decoded['sequence']} ({len(decoded['data'])}) ACCEPTED (in-order)")
-                    # if the packet is the next one
+                    # grab sequence number as int
                     packet_seqn = int(decoded['sequence'])
+                    # if the packet is the next one
                     if seqn == packet_seqn:
+                        # write it stdout and increment sequence number
                         sys.stdout.write(decoded['data'])
                         seqn = seqn + len(decoded['data'])
+                        # check memory to see if we have the next packet stored
                         checkNextPacket()
                     # if packet is out of order store for later use
+                    # HOWEVER - if packet seqn is smaller than our current seqn or it's already in received then we
+                    # have a duplicate packet and can ignore it - still want to send ack though
                     if packet_seqn > seqn and packet_seqn not in received:
                         received[packet_seqn] = decoded['data']
 
