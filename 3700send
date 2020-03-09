@@ -31,7 +31,7 @@ def send_next_packet(seqn, sock, dest):
         while sock.sendto(json.dumps(msg).encode('ascii'), dest) < len(msg):
             log("[error] unable to fully send packet")
         log("[send data] " + str(seqn) + " (" + str(len(msg["data"])) + ")")
-        inFlight[seqn] = msg
+        inFlight[seqn + len(msg["data"])] = msg
         return seqn + len(msg["data"])
     return seqn
 
