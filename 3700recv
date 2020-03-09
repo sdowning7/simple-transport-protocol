@@ -23,8 +23,9 @@ def checkNextPacket():
         if seqn not in received:
             break
         sys.stdout.write(received[seqn])
-        seqn = seqn + len(received[seqn])
+        data_len = len(received[seqn])
         received.pop(seqn)
+        seqn = seqn + data_len
 
 def main():
     global seqn
