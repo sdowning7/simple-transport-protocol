@@ -13,7 +13,7 @@ ACK_LIMIT = 3
 
 # state
 inFlight = {}
-acks = ["9999"]
+acks = []
 
 
 def log(string):
@@ -35,9 +35,9 @@ def send_next_packet(seqn, sock, dest):
         return seqn + len(msg["data"])
     return seqn
 
-def retransmit_dropped_packets(sock, dest):
+def retransmit_dropped_packets(sock, dest, all=False):
     for seqn in inFlight:
-        if (len(acks) >= 3 and seqn < int(acks[-3])) or seqn < int(acks[-1]):
+        if all or seqn < int(acks[-ACK_LIMIT]):
             log("retransmitting packet with seqn " + str(seqn))
             while sock.sendto(json.dumps(inFlight[seqn]).encode('ascii'), dest) < len(inFlight[seqn]):
                 log("[error] unable to retransmit packet")
@@ -64,10 +64,10 @@ def main():
 
     # Now read in data, send packets
     while True:
+        retransmit_dropped_packets(sock, dest, all=True)
+
         if sent and len(inFlight) == 0:
             break
-
-        retransmit_dropped_packets(sock, dest)
 
         log("ABOUT TO SLEEP")
         result = sock.recvfrom(MSG_SIZE)
@@ -92,7 +92,6 @@ def main():
                         new_seq = send_next_packet(seqn, sock, dest)
                         if new_seq == seqn:
                             sent = True
-                            acks[-3] = "999999999999999999"
                         seqn = new_seq
 
             except (ValueError, KeyError, TypeError):
