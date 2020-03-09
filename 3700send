@@ -66,6 +66,8 @@ def main():
         if sent and len(inFlight) == 0:
             break
 
+        retransmit_dropped_packets()
+
         log("ABOUT TO SLEEP")
         result = sock.recvfrom(MSG_SIZE)
 
