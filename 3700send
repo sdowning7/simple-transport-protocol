@@ -4,12 +4,13 @@ import sys
 import socket
 import datetime
 import json
+import time
 
 MSG_SIZE = 1500
 DATA_SIZE = 1472
-TIMEOUT = 30
+TIMEOUT = .5
 # how many packets can be sent at one time
-WIDNOW = 5
+WINDOW = 1
 # how many new packets can be received and sent before retransmitting
 ACK_LIMIT = 3
 
@@ -21,6 +22,12 @@ message the seqn in this map would be 2000). The value of the map will be the en
 receiver for easier retransmission. 
 """
 inFlight = {}
+
+"""
+The variable will keep track of the timers on the packets that are in flight. The key will be the same as the keys for inFlight
+"""
+timers = {}
+
 """
 This will keep track of all of the acks we receive. This is so we can check against the most recent acks in order to
 determine if any of our in flight packets may have been dropped.
@@ -43,6 +50,7 @@ def send_next_packet(seqn, sock, dest):
             log("[error] unable to fully send packet")
         log("[send data] " + str(seqn) + " (" + str(len(msg["data"])) + ")")
         inFlight[seqn + len(msg["data"])] = msg
+        timers[seqn + len(msg["data"])] = time.time()
         return seqn + len(msg["data"])
     return seqn
 
@@ -58,12 +66,20 @@ def retransmit_dropped_packets(sock, dest, all=False):
         # if all flag is enabled or the sequence number is lower than the last 3 acks received
         if all or seqn < int(acks[-ACK_LIMIT]):
             # retransmit the packet
+            if seqn in timers:
+                timers.pop(seqn)
             log("retransmitting packet with seqn " + str(seqn))
             while sock.sendto(json.dumps(inFlight[seqn]).encode('ascii'), dest) < len(inFlight[seqn]):
                 log("[error] unable to retransmit packet")
 
 
 def main():
+ 
+    global cwnd
+    global rtt
+    cwnd = WINDOW
+    rtt = TIMEOUT   
+    
     # Bind to localhost and an ephemeral port
     ip_port = sys.argv[1]
     udp_ip = ip_port[0:ip_port.find(":")]
@@ -76,7 +92,7 @@ def main():
     sock.settimeout(TIMEOUT)
 
     # Send initial packets
-    for i in range(WIDNOW):
+    for i in range(cwnd):
         seqn = send_next_packet(seqn, sock, dest)
 
     # flag for if all of the packets have been sent or not
@@ -86,20 +102,36 @@ def main():
     while True:
         #TODO - we don't really want to always retransmit all packets. Should have a timer or some system to keep track
         # of when to re-transmit. This is expensive and unnecessary in most cases, and hurts performance.
-        retransmit_dropped_packets(sock, dest, all=True)
+        #retransmit_dropped_packets(sock, dest, all=True)
 
         # if the message is sent and there's no inflight packets, we're done
         if sent and len(inFlight) == 0:
             break
 
+        log(f"IN-FLIGHT: {inFlight.keys()}")
         log("ABOUT TO SLEEP")
-        result = sock.recvfrom(MSG_SIZE)
+        #"""
+        while(True):
+            try:
+                result = sock.recvfrom(MSG_SIZE)
+                if result:
+                    break
+            except socket.timeout:
+                log("TIMEOUT")
+                cwnd = WINDOW;
+                #rtt = rtt * 2
+                #sock.settimeout(rtt)
+                retransmit_dropped_packets(sock, dest, all=True)
 
+        """
+        result = sock.recvfrom(MSG_SIZE)
+        """
         """
         TODO - this is where things are breaking with drops. it basically hangs on the recvfrom and if it doesn't
         receive anything it timeouts and exits. So I'm not sure where to add a timer or something because we still want
         to always be trying to recieve packets in case there's just a delay
         """
+        #log("HERE we sent something")
         if result:
             (data, _addr) = result
             data = data.decode('ascii')
@@ -114,16 +146,27 @@ def main():
                     # remove from in flight list and add to acks
                     inFlight.pop(ack)
                     acks.append(ack)
+                    cwnd+=1
                     # if we have enough acks stored to compare against, retransmit any potentially dropped packets
-                    if len(acks) >= ACK_LIMIT:
-                        retransmit_dropped_packets(sock, dest)
+                    #if len(acks) >= ACK_LIMIT:
+                        #retransmit_dropped_packets(sock, dest)
 
                     # Try to send next packet; set sent flag to true if no more data
                     if not sent:
-                        new_seq = send_next_packet(seqn, sock, dest)
-                        if new_seq == seqn:
-                            sent = True
-                        seqn = new_seq
+                        while(len(inFlight) < cwnd and not sent):
+                            new_seq = send_next_packet(seqn, sock, dest)
+                            if new_seq == seqn:
+                                sent = True
+                            seqn = new_seq
+
+                    # adjust our timeout
+                    if ack in timers:
+                        rtt = 0.8*rtt + 0.2*(time.time() - timers(ack))
+                        sock.settimeout(2*rtt)
+                        timers.pop(ack)
+                else:
+                    cwnd = cwnd / 2
+                    retransmit_dropped_packets(sock, dest, all=True)
 
             except (ValueError, KeyError, TypeError):
                 log("[recv corrupt packet]")
@@ -134,8 +177,9 @@ def main():
         log(f"(seqn {seqn})")
 
     log("RECEIVED ALL ACKS")
-
-    sock.sendto(json.dumps({"eof": True, "data": "", "sequence": seqn, "ack": False}).encode('ascii'), dest)
+    for i in range(40):
+        sock.sendto(json.dumps({"eof": True, "data": "", "sequence": seqn, "ack": False}).encode('ascii'), dest)
+    
     sys.exit(0)
 
 

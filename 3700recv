@@ -6,7 +6,7 @@ import datetime
 import json
 
 MSG_SIZE = 1500
-TIMEOUT = 10
+TIMEOUT = 30
 
 # state
 """
@@ -62,7 +62,7 @@ def main():
     log(f"[bound] {udp_port}")
 
     # Now listen for packets
-    while True:
+    while True:        
         result = sock.recvfrom(MSG_SIZE)
 
         # If nothing is ready, we hit the timeout
@@ -80,21 +80,32 @@ def main():
 
                 # If there is data, we accept it and print it out
                 if decoded['data']:
-                    log(f"[recv data] {decoded['sequence']} ({len(decoded['data'])}) ACCEPTED (in-order)")
                     # grab sequence number as int
                     packet_seqn = int(decoded['sequence'])
+                    
                     # if the packet is the next one
                     if seqn == packet_seqn:
+                        log(f"[recv data] {decoded['sequence']} ({len(decoded['data'])}) ACCEPTED (in-order)")
                         # write it stdout and increment sequence number
                         sys.stdout.write(decoded['data'])
                         seqn = seqn + len(decoded['data'])
                         # check memory to see if we have the next packet stored
                         checkNextPacket()
+                    
                     # if packet is out of order store for later use
+                    elif packet_seqn > seqn and packet_seqn not in received:
+                        log(f"[recv data] {decoded['sequence']} ({len(decoded['data'])}) ACCEPTED (out-of-order)")
+                        received[packet_seqn] = decoded['data']
+                        #msg = json.dumps({"ack": seqn})
+                        #log("send last ordered ack")
+                        #continue
                     # HOWEVER - if packet seqn is smaller than our current seqn or it's already in received then we
                     # have a duplicate packet and can ignore it - still want to send ack though
-                    if packet_seqn > seqn and packet_seqn not in received:
-                        received[packet_seqn] = decoded['data']
+                    else:
+                        log(f"IGNORED")
+                        #msg = json.dumps({"ack": seqn})
+                        #log("send last ordered ack")
+                        continue
 
                 # Send back an ack to the sender
                 msg = json.dumps({"ack": decoded['sequence'] + len(decoded['data'])})
