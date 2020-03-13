@@ -18,11 +18,11 @@ for ($i=0; $i<=$#ARGV; $i++) {
 print "Tests\n";
 $grade1 = grade("Large 5Mb/s, 10 ms, 10% drop", 5, 10, 10, "large", 1);
 $grade2 = grade("Large 10Mb/s, 50 ms, 10% drop", 10, 50, 10, "large", 0);
-#$grade3 = grade("Large 10Mb/s, 50 ms, 50% drop", 10, 50, 50, "large", 0);
+$grade3 = grade("Large 10Mb/s, 50 ms, 50% drop", 10, 50, 50, "large", 0);
 $grade4 = grade("Large 3Mb/s, 10 ms, 20% drop", 3, 10, 20, "large", 0);
 $grade5 = grade("Large 50Mb/s, 5 ms, 5% drop", 50, 5, 5, "large", 0);
 $grade6 = grade("Huge 5Mb/s, 10 ms", 5, 10, 0, "huge", 0);
-#$grade7 = grade("Huge 5Mb/s, 10 ms, 10% drop", 5, 10, 10, "huge", 0);
+$grade7 = grade("Huge 5Mb/s, 10 ms, 10% drop", 5, 10, 10, "huge", 0);
 $grade8 = grade("Huge 10Mb/s, 3 ms, 5% drop", 10, 3, 5, "huge", 0);
 
 $grade_total = $grade1 + $grade2 + $grade3 + $grade4 + $grade5 + $grade6 + $grade7+ $grade8;

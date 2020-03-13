@@ -102,10 +102,12 @@ def main():
                     # HOWEVER - if packet seqn is smaller than our current seqn or it's already in received then we
                     # have a duplicate packet and can ignore it - still want to send ack though
                     else:
+                        #TODO this is where I was running into issues. I wanted to try to avoid sending back an ACK when we are 
+                        #ignoring a packet.I'm not 100% sure this is the bahavior we would want though 
                         log(f"IGNORED")
                         #msg = json.dumps({"ack": seqn})
                         #log("send last ordered ack")
-                        continue
+                        #continue
 
                 # Send back an ack to the sender
                 msg = json.dumps({"ack": decoded['sequence'] + len(decoded['data'])})
